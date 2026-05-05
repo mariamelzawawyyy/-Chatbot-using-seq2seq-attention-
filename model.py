@@ -9,7 +9,12 @@ import random
 class Encoder(nn.Module):
     def __init__(self, vocab_size, embedding_size, hidden_size, num_layers, padding_index):
         super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
         self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx=padding_index)
+        
+        # BiLSTM
         self.bilstm = nn.LSTM(
             input_size=embedding_size,
             hidden_size=hidden_size,
@@ -17,20 +22,49 @@ class Encoder(nn.Module):
             batch_first=True,
             bidirectional=True
         )
+        
+        # Linear layers لتحويل الـ BiLSTM states (hidden*2) إلى حجم الـ Decoder hidden (hidden)
+        # نستخدم hidden_size * 2 لأن الـ LSTM bidirectional
         self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
         self.fc_cell   = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, x):
-        # x: [batch_size, seq_len]
-        x = self.embedding(x)
-        outputs, (hidden_state, cell_state) = self.bilstm(x)
+        # x shape: [batch_size, seq_len]
+        embedded = self.embedding(x) 
+        # embedded shape: [batch_size, seq_len, embedding_size]
+        
+        encoder_outputs, (hidden, cell) = self.bilstm(embedded)
+        # encoder_outputs shape: [batch_size, seq_len, hidden_size * 2]
+        # hidden shape: [num_layers * 2, batch_size, hidden_size]
 
-        # دمج forward + backward (يشتغل صح مع num_layers=1)
-        hidden_state = self.fc_hidden(torch.cat([hidden_state[0:1], hidden_state[1:2]], dim=2))
-        cell_state   = self.fc_cell(torch.cat([cell_state[0:1],   cell_state[1:2]],   dim=2))
+        # --- التعامل مع الـ Hidden State ---
+        # 1. إعادة تشكيل الـ hidden لفك فصل الطبقات عن الاتجاهات
+        # الـ hidden حالياً مرتب كـ [L1_fwd, L1_back, L2_fwd, L2_back, ...]
+        hidden = hidden.view(self.num_layers, 2, x.shape[0], self.hidden_size)
+        
+        # 2. نأخذ آخر طبقة فقط (Index -1) للاتجاهين (Forward و Backward)
+        # hidden[-1, 0, :, :] هو الـ forward لآخر طبقة
+        # hidden[-1, 1, :, :] هو الـ backward لآخر طبقة
+        last_hidden_fwd = hidden[-1, 0, :, :]
+        last_hidden_back = hidden[-1, 1, :, :]
+        
+        # 3. ندمجهم مع بعض (Concatenate)
+        combined_hidden = torch.cat((last_hidden_fwd, last_hidden_back), dim=1) 
+        # shape: [batch_size, hidden_size * 2]
+        
+        # 4. نمررهم على الـ Linear Layer لتقليل الحجم ليناسب الـ Decoder
+        final_hidden = self.fc_hidden(combined_hidden).unsqueeze(0) 
+        # shape: [1, batch_size, hidden_size] (جاهز كـ initial hidden للـ decoder)
 
-        return outputs, hidden_state, cell_state
+        # --- نفس الخطوات للـ Cell State ---
+        cell = cell.view(self.num_layers, 2, x.shape[0], self.hidden_size)
+        last_cell_fwd = cell[-1, 0, :, :]
+        last_cell_back = cell[-1, 1, :, :]
+        combined_cell = torch.cat((last_cell_fwd, last_cell_back), dim=1)
+        final_cell = self.fc_cell(combined_cell).unsqueeze(0)
+        # shape: [1, batch_size, hidden_size]
 
+        return encoder_outputs, final_hidden, final_cell  
 ############################### Attention ########################################
 
 class Attention(nn.Module):

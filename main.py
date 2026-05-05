@@ -130,7 +130,8 @@ class ChatDataset(Dataset):
 #  for colab   
 train_path = "train/train/dialogues_train.txt"
 val_path   = "validation/validation/dialogues_validation.txt"
-test_path  = "test/test/dialogues_test.txt" 
+test_path  = "test/test/dialogues_test.txt"
+ 
 
  
 

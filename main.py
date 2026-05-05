@@ -127,9 +127,12 @@ class ChatDataset(Dataset):
 ##############################
 # ✅ 8️⃣ Global Setup (accessible for import)
 ##############################
-train_path = "C:/Users/maria/Downloads/chatbot-seq2seq+attention/train/train/dialogues_train.txt"
-val_path   = "C:/Users/maria/Downloads/chatbot-seq2seq+attention/validation/validation/dialogues_validation.txt"
-test_path  = "C:/Users/maria/Downloads/chatbot-seq2seq+attention/test/test/dialogues_test.txt"
+#  for colab   
+train_path = "train/train/dialogues_train.txt"
+val_path   = "validation/validation/dialogues_validation.txt"
+test_path  = "test/test/dialogues_test.txt" 
+
+ 
 
 train_pairs = prepare_pairs(train_path)
 val_pairs   = prepare_pairs(val_path)

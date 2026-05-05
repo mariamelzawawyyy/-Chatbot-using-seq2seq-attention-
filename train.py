@@ -3,54 +3,28 @@ import torch.nn as nn
 import torch.optim as optim
 from model import Seq2seq, Encoder, Decoder
 from main import vocab, PAD_IDX, SOS_IDX, EOS_IDX, UNK_IDX, train_loader, val_loader
-import re
 
-# -------------------------------
-# 1️⃣ Device Setup
-# -------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Working on device: {device}")
 
-# -------------------------------
-# 2️⃣ Hyperparameters
-# -------------------------------
-embedding_size        = 256
-hidden_size           = 256  
-num_layers            =  1   
-attention_dim         = 256
-vocab_size            = vocab.n_words
-num_epochs            = 15   
-learning_rate         = 0.001
-teacher_forcing_ratio = 0.5
+# --- Hyperparameters ---
+embedding_size = 256
+hidden_size    = 256  
+num_layers     = 2      
 
-# -------------------------------
-# 3️⃣ Initialize Model
-# -------------------------------
-encoder = Encoder(
-    vocab_size     = vocab_size,
-    embedding_size = embedding_size,
-    hidden_size    = hidden_size,
-    num_layers     = num_layers,
-    padding_index  = PAD_IDX
-).to(device)
+attention_dim  = 256
+vocab_size     = vocab.n_words
+num_epochs     = 15   
+learning_rate  = 0.001
 
-decoder = Decoder(
-    embedding_size = embedding_size,
-    input_size     = vocab_size,
-    output_size    = vocab_size,
-    hidden_size    = hidden_size,
-    num_layers     = num_layers,
-    attention_size = attention_dim
-).to(device)
-
+# --- Initialize ---
+encoder = Encoder(vocab_size, embedding_size, hidden_size, num_layers, PAD_IDX, dropout=0.3).to(device)
+decoder = Decoder(embedding_size, vocab_size, vocab_size, hidden_size, num_layers, attention_dim, dropout=0.3).to(device)
 model = Seq2seq(encoder, decoder).to(device)
 
 criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5) # أضفنا weight decay
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1)
 
-# -------------------------------
-# 4️⃣ Helper function to test during training
-# -------------------------------
 def evaluate_sample(sentence):
     model.eval()
     with torch.no_grad():
@@ -58,9 +32,7 @@ def evaluate_sample(sentence):
         tokens = [vocab.word2index.get(word, UNK_IDX) for word in sentence.split()]
         tokens.append(EOS_IDX)
         input_tensor = torch.LongTensor(tokens).unsqueeze(0).to(device)
-        
         encoder_outputs, hidden, cell = model.encoder(input_tensor)
-        
         outputs = [SOS_IDX]
         for _ in range(20):
             prev_word = torch.LongTensor([outputs[-1]]).to(device)
@@ -68,72 +40,50 @@ def evaluate_sample(sentence):
             best_guess = prediction.argmax(1).item()
             outputs.append(best_guess)
             if best_guess == EOS_IDX: break
-            
-        words = [vocab.index2word[idx] for idx in outputs if idx not in [SOS_IDX, EOS_IDX, PAD_IDX]]
-        return " ".join(words)
+        return " ".join([vocab.index2word[idx] for idx in outputs if idx not in [SOS_IDX, EOS_IDX, PAD_IDX]])
 
-# -------------------------------
-# 5️⃣ Training Loop
-# -------------------------------
 print("Starting Training...")
+best_val_loss = float('inf')
 
 for epoch in range(1, num_epochs + 1):
     model.train()
     train_loss = 0
+     
+    tf_ratio = max(0.1, 0.5 - (epoch * 0.05))
 
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
-        inputs  = inputs.to(device)
-        targets = targets.to(device)
-
+    for inputs, targets in train_loader:
+        inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
+        outputs = model(inputs, targets, teacher_forcing_ratio=tf_ratio)
         
-        # Forward pass
-        outputs = model(inputs, targets, teacher_forcing_ratio=teacher_forcing_ratio)
- 
         output_dim = outputs.shape[-1]
-        outputs = outputs[:, 1:].reshape(-1, output_dim)
-        targets = targets[:, 1:].reshape(-1)
-
-        loss = criterion(outputs, targets)
-        loss.backward()
-
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        loss = criterion(outputs[:, 1:].reshape(-1, output_dim), targets[:, 1:].reshape(-1))
         
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         train_loss += loss.item()
 
     avg_train_loss = train_loss / len(train_loader)
 
-    # ── Validation ──
+    # Validation
     model.eval()
     val_loss = 0
     with torch.no_grad():
         for inputs, targets in val_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs, targets, teacher_forcing_ratio=0)
-            outputs = outputs[:, 1:].reshape(-1, output_dim)
-            targets = targets[:, 1:].reshape(-1)
-            val_loss += criterion(outputs, targets).item()
-
+            val_loss += criterion(outputs[:, 1:].reshape(-1, output_dim), targets[:, 1:].reshape(-1)).item()
+    
     avg_val_loss = val_loss / len(val_loader)
+    scheduler.step(avg_val_loss)
 
-    print(f"Epoch [{epoch}/{num_epochs}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
-    print(f"Sample Chat -> Input: 'hello' | Response: {evaluate_sample('hello')}")
-    print("-" * 30)
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        torch.save(model.state_dict(), "chatbot_best_model.pth")
+        status = "⭐ Model Saved!"
+    else: status = ""
 
-# -------------------------------
-# 6️⃣ Save the Model
-# -------------------------------
-checkpoint = {
-    'model_state': model.state_dict(),
-    'vocab': vocab,
-    'config': {
-        'embedding_size': embedding_size,
-        'hidden_size': hidden_size,
-        'num_layers': num_layers,
-        'attention_dim': attention_dim
-    }
-}
-torch.save(checkpoint, "chatbot_best_model.pth")
-print("Training Complete & Model Saved!")  
+    print(f"Epoch [{epoch}/{num_epochs}] | TF: {tf_ratio:.2f} | Train: {avg_train_loss:.4f} | Val: {avg_val_loss:.4f} {status}")
+    print(f"Sample: {evaluate_sample('hello')}")
+    print("-" * 20)  

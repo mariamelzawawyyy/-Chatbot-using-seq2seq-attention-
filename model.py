@@ -4,13 +4,19 @@ import torch.nn.functional as F
 import random
 
 class Encoder(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, num_layers, padding_index, dropout=0.5):
+ 
+    def __init__(self, vocab_size, embedding_size, hidden_size, num_layers, padding_index, dropout=0.5, weights_matrix=None):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         
-        self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx=padding_index)
-        self.dropout = nn.Dropout(dropout) # Dropout للـ Embeddings
+         
+        if weights_matrix is not None:
+            self.embedding = nn.Embedding.from_pretrained(weights_matrix, freeze=False, padding_idx=padding_index)
+        else:
+            self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx=padding_index)
+            
+        self.dropout = nn.Dropout(dropout)
         
         self.bilstm = nn.LSTM(
             input_size=embedding_size,
@@ -25,7 +31,7 @@ class Encoder(nn.Module):
         self.fc_cell   = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, x):
-        embedded = self.dropout(self.embedding(x)) # تطبيق الـ Dropout هنا
+        embedded = self.dropout(self.embedding(x))
         encoder_outputs, (hidden, cell) = self.bilstm(embedded)
 
         hidden = hidden.view(self.num_layers, 2, x.shape[0], self.hidden_size)
@@ -38,7 +44,6 @@ class Encoder(nn.Module):
 
         return encoder_outputs, final_hidden, final_cell  
 
-# --- كلاس الـ Attention يظل كما هو ---
 class Attention(nn.Module):
     def __init__(self, enc_outputs_dim, dec_hidden_dim, attention_dim):
         super().__init__()
@@ -53,14 +58,20 @@ class Attention(nn.Module):
         energy   = self.tanh(enc_proj + dec_proj)       
         attn_scores = self.v(energy).squeeze(2)            
         attn_weights   = F.softmax(attn_scores, dim=1)     
-        context_vector = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)           
+        context_vector = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)            
         return context_vector, attn_weights
 
 class Decoder(nn.Module):
-    def __init__(self, embedding_size, input_size, output_size, hidden_size, num_layers, attention_size, dropout=0.5):
+     
+    def __init__(self, embedding_size, input_size, output_size, hidden_size, num_layers, attention_size, dropout=0.5, weights_matrix=None):
         super().__init__()
-        self.embedding = nn.Embedding(input_size, embedding_size)
-        self.dropout = nn.Dropout(dropout) # Dropout للـ Embeddings
+        
+        if weights_matrix is not None:
+            self.embedding = nn.Embedding.from_pretrained(weights_matrix, freeze=False)
+        else:
+            self.embedding = nn.Embedding(input_size, embedding_size)
+            
+        self.dropout = nn.Dropout(dropout)
         
         self.attention = Attention(
             enc_outputs_dim=hidden_size * 2,
@@ -78,7 +89,7 @@ class Decoder(nn.Module):
 
     def forward(self, x, hidden, cell, encoder_outputs):
         x = x.unsqueeze(1)    
-        embedded = self.dropout(self.embedding(x)) # تطبيق الـ Dropout هنا
+        embedded = self.dropout(self.embedding(x))
 
         dec_hidden = hidden[-1]
         context, attn_weights = self.attention(dec_hidden, encoder_outputs)
@@ -89,7 +100,6 @@ class Decoder(nn.Module):
 
         return predictions, hidden, cell, attn_weights
 
-# --- كلاس الـ Seq2Seq يظل كما هو ---
 class Seq2seq(nn.Module):
     def __init__(self, encoder, decoder):
         super().__init__()

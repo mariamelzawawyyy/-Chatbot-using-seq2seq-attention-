@@ -10,7 +10,7 @@ PAD_IDX = 2
 UNK_IDX = 3
 
   
-GLOVE_PATH = r"C:\Users\maria\Downloads\glove.2024.wikigiga.100d\wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt"
+GLOVE_PATH =  "/content/glove_embeddings /wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt"
 
 ##############################
 # 2️⃣ Clean Function

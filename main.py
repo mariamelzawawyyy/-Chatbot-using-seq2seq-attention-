@@ -8,7 +8,8 @@ SOS_IDX = 0
 EOS_IDX = 1
 PAD_IDX = 2
 UNK_IDX = 3
-GLOVE_PATH = "/content/-Chatbot-using-seq2seq-attention-/glove_embeddings /wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt"
+GLOVE_PATH = "/content/-Chatbot-using-seq2seq-attention-/glove_embeddings/wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt"
+ 
  
  
 ##############################

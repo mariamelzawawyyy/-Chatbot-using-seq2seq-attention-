@@ -7,8 +7,7 @@ from main import vocab, PAD_IDX, SOS_IDX, EOS_IDX, UNK_IDX, train_loader, val_lo
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# 🔥 FIX: GloVe path (المهم)
-GLOVE_PATH = "/content/-Chatbot-using-seq2seq-attention-/glove_embeddings/wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt"
+GLOVE_PATH = "/content/-Chatbot-using-seq2seq-attention-/glove_embeddings/wiki_giga_2024_100_MFT20_vectors_seed_2024_alpha_0.75_eta_0.05.050_combined.txt" 
 
 
 embedding_size = 100   
